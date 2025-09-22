@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 import json
 import os
 from datetime import datetime
@@ -38,7 +39,9 @@ trades = load_trades()
 # Sidebar Settings
 # ----------------------------
 st.sidebar.header("Settings")
-starting_capital = st.sidebar.number_input("Starting Capital ($)", value=10000.0, step=100.0, format="%.2f")
+starting_capital = st.sidebar.number_input(
+    "Starting Capital ($)", value=10000.0, step=100.0, format="%.2f"
+)
 
 # ----------------------------
 # Auto Import Trades
@@ -58,7 +61,10 @@ if uploaded_file is not None:
         imported_df.columns = imported_df.columns.str.strip().str.title()
 
         # Expected minimum columns
-        required_cols = ["Symbol", "Entry Date", "Exit Date", "Entry Price", "Exit Price", "Quantity", "Position"]
+        required_cols = [
+            "Symbol", "Entry Date", "Exit Date",
+            "Entry Price", "Exit Price", "Quantity", "Position"
+        ]
         if all(col in imported_df.columns for col in required_cols):
 
             # Convert dates
@@ -73,7 +79,9 @@ if uploaded_file is not None:
                     return (row["Entry Price"] - row["Exit Price"]) * row["Quantity"]
 
             imported_df["P&L"] = imported_df.apply(calc_pnl, axis=1)
-            imported_df["Return %"] = (imported_df["P&L"] / (imported_df["Entry Price"] * imported_df["Quantity"])) * 100
+            imported_df["Return %"] = (
+                imported_df["P&L"] / (imported_df["Entry Price"] * imported_df["Quantity"])
+            ) * 100
 
             if "Notes" not in imported_df.columns:
                 imported_df["Notes"] = ""
@@ -103,45 +111,4 @@ with st.expander("➕ Log New Trade", expanded=True):
     col1, col2, col3 = st.columns(3)
     symbol = col1.text_input("Symbol")
     entry_date = col2.date_input("Entry Date", datetime.today().date())
-    exit_date = col3.date_input("Exit Date", datetime.today().date())
-
-    col4, col5, col6 = st.columns(3)
-    entry_price = col4.number_input("Entry Price", min_value=0.0, value=0.0, format="%.2f")
-    exit_price = col5.number_input("Exit Price", min_value=0.0, value=0.0, format="%.2f")
-    position = col6.selectbox("Position", ["Long", "Short"])
-
-    col7, col8 = st.columns(2)
-    quantity = col7.number_input("Quantity", min_value=1, value=1, step=1)
-    notes = col8.text_input("Notes (Optional)")
-
-    if st.button("Add Trade"):
-        if entry_price > 0 and exit_price > 0 and symbol:
-            pnl = (exit_price - entry_price) * quantity if position == "Long" else (entry_price - exit_price) * quantity
-            ret_pct = (pnl / (entry_price * quantity)) * 100
-
-            new_trade = pd.DataFrame([{
-                "Symbol": symbol,
-                "Entry Date": entry_date,
-                "Exit Date": exit_date,
-                "Entry Price": entry_price,
-                "Exit Price": exit_price,
-                "Position": position,
-                "Quantity": quantity,
-                "P&L": pnl,
-                "Return %": ret_pct,
-                "Notes": notes
-            }])
-
-            trades = pd.concat([trades, new_trade], ignore_index=True)
-            save_trades(trades)
-            st.success("✅ Trade added!")
-
-# ----------------------------
-# Statistics Dashboard
-# ----------------------------
-st.subheader("📊 Statistics")
-
-if not trades.empty:
-    total_trades = len(trades)
-    total_pnl = trades["P&L"].sum()
-    win_rate = (trades["P&L"] > 0).mean()_
+    exit_date = col3.date_input
