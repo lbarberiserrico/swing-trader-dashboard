@@ -1,179 +1,119 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
-import datetime
 import json
+import os
 
-# -------------------------
-# Initialize session state
-# -------------------------
-if "trades" not in st.session_state:
+# --- File to persist data ---
+DATA_FILE = "trader_data.json"
+
+# --- Initialize session state ---
+if 'trades' not in st.session_state:
     st.session_state.trades = []
-if "capital" not in st.session_state:
-    st.session_state.capital = 10000  # default starting equity
 
-# -------------------------
-# Utility functions
-# -------------------------
-def calculate_pnl(entry, exit, qty, position, commission=0):
-    """Calculate profit/loss for a trade."""
-    if position == "Long":
-        pnl = (exit - entry) * qty - commission
-    else:  # Short
-        pnl = (entry - exit) * qty - commission
-    return pnl
-
-def calculate_metrics(trades):
-    """Compute trading statistics."""
-    if not trades:
-        return {}
-
-    df = pd.DataFrame(trades)
-
-    wins = df[df["PnL"] > 0]
-    losses = df[df["PnL"] <= 0]
-
-    total_pnl = df["PnL"].sum()
-    win_rate = len(wins) / len(df) * 100 if len(df) > 0 else 0
-    avg_win = wins["PnL"].mean() if not wins.empty else 0
-    avg_loss = losses["PnL"].mean() if not losses.empty else 0
-
-    # Sharpe ratio
-    returns = df["ReturnPct"] / 100
-    sharpe = (returns.mean() / returns.std()) * np.sqrt(252) if returns.std() > 0 else 0
-
-    # Profit Factor
-    gross_profit = wins["PnL"].sum()
-    gross_loss = abs(losses["PnL"].sum())
-    profit_factor = gross_profit / gross_loss if gross_loss > 0 else np.inf
-
-    # Equity curve
-    df["Equity"] = st.session_state.capital + df["PnL"].cumsum()
-    max_equity = df["Equity"].cummax()
-    drawdowns = df["Equity"] - max_equity
-    max_drawdown = drawdowns.min()
-
-    return {
-        "total_trades": len(df),
-        "total_pnl": total_pnl,
-        "win_rate": win_rate,
-        "avg_win": avg_win,
-        "avg_loss": avg_loss,
-        "sharpe": sharpe,
-        "profit_factor": profit_factor,
-        "max_drawdown": max_drawdown,
-        "equity_curve": df[["ExitDate", "Equity"]]
+if 'settings' not in st.session_state:
+    st.session_state.settings = {
+        'starting_capital': 10000.00,
+        'default_commission': 1.00,
+        'max_risk_pct': 2.0
     }
 
-def save_to_file():
-    """Export trades to JSON."""
-    return json.dumps(st.session_state.trades, indent=2)
+# --- Load saved data ---
+if os.path.exists(DATA_FILE):
+    with open(DATA_FILE, "r") as f:
+        saved = json.load(f)
+        st.session_state.trades = saved.get("trades", st.session_state.trades)
+        st.session_state.settings = saved.get("settings", st.session_state.settings)
 
-def load_from_file(file_content):
-    """Import trades from JSON."""
-    st.session_state.trades = json.loads(file_content)
+# --- Function to save data ---
+def save_data():
+    with open(DATA_FILE, "w") as f:
+        json.dump({
+            "trades": st.session_state.trades,
+            "settings": st.session_state.settings
+        }, f, indent=2)
 
-# -------------------------
-# Sidebar Settings
-# -------------------------
-st.sidebar.header("Settings")
-st.session_state.capital = st.sidebar.number_input("Starting Capital ($)", min_value=1000, value=st.session_state.capital, step=1000)
-commission_default = st.sidebar.number_input("Default Commission ($)", min_value=0.0, value=0.0, step=0.5)
+# --- Sidebar Settings ---
+st.sidebar.subheader("Settings")
 
-# -------------------------
-# Trade Logging
-# -------------------------
-st.header("📈 Swing Trading Journal")
+settings = st.session_state.settings
 
-with st.form("log_trade"):
-    st.subheader("Log a New Trade")
-    symbol = st.text_input("Symbol").upper()
-    position = st.selectbox("Position", ["Long", "Short"])
-    qty = st.number_input("Quantity", min_value=1, value=100, step=1)
-    entry_date = st.date_input("Entry Date", value=datetime.date.today())
-    entry_price = st.number_input("Entry Price", min_value=0.0, value=100.0, step=0.01)
-    exit_date = st.date_input("Exit Date", value=datetime.date.today())
-    exit_price = st.number_input("Exit Price", min_value=0.0, value=100.0, step=0.01)
-    notes = st.text_area("Notes (optional)")
-    commission = st.number_input("Commission/Fees", min_value=0.0, value=commission_default, step=0.01)
+settings['starting_capital'] = st.sidebar.number_input(
+    "Starting Capital ($)",
+    value=float(settings['starting_capital']),
+    step=100.00,
+    format="%.2f"
+)
 
-    submitted = st.form_submit_button("Add Trade")
-    if submitted:
-        pnl = calculate_pnl(entry_price, exit_price, qty, position, commission)
-        return_pct = (pnl / (entry_price * qty)) * 100
+settings['default_commission'] = st.sidebar.number_input(
+    "Default Commission ($)",
+    value=float(settings['default_commission']),
+    step=0.10,
+    format="%.2f"
+)
+
+settings['max_risk_pct'] = st.sidebar.number_input(
+    "Max Risk % per Trade",
+    value=float(settings['max_risk_pct']),
+    step=0.5,
+    format="%.2f"
+)
+
+# --- Main App ---
+st.title("Swing Trader Dashboard")
+
+# --- Add Trade ---
+st.subheader("Add Trade")
+
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    symbol = st.text_input("Symbol")
+with col2:
+    entry = st.number_input("Entry Price", format="%.2f")
+with col3:
+    exit_price = st.number_input("Exit Price", format="%.2f")
+with col4:
+    commission = st.number_input("Commission ($)", value=float(settings['default_commission']), step=0.10, format="%.2f")
+
+if st.button("Add Trade"):
+    if symbol and entry and exit_price is not None:
         trade = {
-            "Symbol": symbol,
-            "Position": position,
-            "Quantity": qty,
-            "EntryDate": str(entry_date),
-            "EntryPrice": entry_price,
-            "ExitDate": str(exit_date),
-            "ExitPrice": exit_price,
-            "PnL": pnl,
-            "ReturnPct": return_pct,
-            "Notes": notes
+            "symbol": symbol,
+            "entry": entry,
+            "exit": exit_price,
+            "commission": commission
         }
         st.session_state.trades.append(trade)
+        save_data()
         st.success(f"Trade for {symbol} added!")
 
-# -------------------------
-# Statistics Dashboard
-# -------------------------
-st.subheader("📊 Statistics Dashboard")
-metrics = calculate_metrics(st.session_state.trades)
-
-if metrics:
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Trades", metrics["total_trades"])
-    col2.metric("Total P&L", f"${metrics['total_pnl']:,.2f}")
-    col3.metric("Win Rate", f"{metrics['win_rate']:.1f}%")
-
-    col4, col5, col6 = st.columns(3)
-    col4.metric("Average Win", f"${metrics['avg_win']:,.2f}")
-    col5.metric("Average Loss", f"${metrics['avg_loss']:,.2f}")
-    col6.metric("Sharpe Ratio", f"{metrics['sharpe']:.2f}")
-
-    col7, col8 = st.columns(2)
-    col7.metric("Profit Factor", f"{metrics['profit_factor']:.2f}")
-    col8.metric("Max Drawdown", f"${metrics['max_drawdown']:,.2f}")
-
-# -------------------------
-# Equity Curve Chart
-# -------------------------
-if metrics and not metrics["equity_curve"].empty:
-    st.subheader("💰 Equity Curve")
-    eq_df = metrics["equity_curve"]
-    fig, ax = plt.subplots()
-    ax.plot(eq_df["ExitDate"], eq_df["Equity"], marker="o")
-    ax.set_title("Equity Curve")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Equity ($)")
-    plt.xticks(rotation=45)
-    st.pyplot(fig)
-
-# -------------------------
-# Trade History
-# -------------------------
-st.subheader("📜 Trade History")
-
+# --- Trades Table ---
 if st.session_state.trades:
     df = pd.DataFrame(st.session_state.trades)
+    df["Profit"] = df["exit"] - df["entry"] - df["commission"]
+    st.subheader("Trades")
     st.dataframe(df)
 
-    # Export button
-    st.download_button(
-        label="Export Trades (JSON)",
-        data=save_to_file(),
-        file_name="trades.json",
-        mime="application/json"
-    )
+    # --- Stats ---
+    total_trades = len(df)
+    winning_trades = len(df[df["Profit"] > 0])
+    win_rate = round((winning_trades / total_trades) * 100, 2) if total_trades else 0
+    avg_win = round(df[df["Profit"] > 0]["Profit"].mean(), 2) if winning_trades else 0
+    avg_loss = round(df[df["Profit"] <= 0]["Profit"].mean(), 2) if total_trades - winning_trades else 0
 
-    # Import button
-    uploaded = st.file_uploader("Import Trades (JSON)", type="json")
-    if uploaded:
-        load_from_file(uploaded.read().decode())
-        st.success("Trades imported successfully!")
+    st.subheader("Stats")
+    st.write(f"Total Trades: {total_trades}")
+    st.write(f"Win Rate: {win_rate}%")
+    st.write(f"Avg Win: ${avg_win} • Avg Loss: ${avg_loss}")
 
+    # --- Equity Curve ---
+    df["Equity"] = settings['starting_capital'] + df["Profit"].cumsum()
+    st.subheader("Equity Curve")
+    fig, ax = plt.subplots()
+    ax.plot(df["Equity"], marker='o')
+    ax.set_xlabel("Trade #")
+    ax.set_ylabel("Equity ($)")
+    ax.grid(True)
+    st.pyplot(fig)
 else:
-    st.info("No trades logged yet.")
+    st.info("No trades added yet.")
