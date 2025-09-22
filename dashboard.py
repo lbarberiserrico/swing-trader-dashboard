@@ -1,119 +1,128 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import json
 import os
+from datetime import datetime
 
-# --- File to persist data ---
-DATA_FILE = "trader_data.json"
+# ----------------------------
+# File for saving trades
+# ----------------------------
+DATA_FILE = "trades.json"
 
-# --- Initialize session state ---
-if 'trades' not in st.session_state:
-    st.session_state.trades = []
+# Load trades from JSON file
+def load_trades():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r") as f:
+            return pd.DataFrame(json.load(f))
+    return pd.DataFrame(columns=["Symbol", "Entry Date", "Exit Date", "Entry Price", "Exit Price",
+                                 "Position", "Quantity", "P&L", "Return %", "Notes"])
 
-if 'settings' not in st.session_state:
-    st.session_state.settings = {
-        'starting_capital': 10000.00,
-        'default_commission': 1.00,
-        'max_risk_pct': 2.0
-    }
-
-# --- Load saved data ---
-if os.path.exists(DATA_FILE):
-    with open(DATA_FILE, "r") as f:
-        saved = json.load(f)
-        st.session_state.trades = saved.get("trades", st.session_state.trades)
-        st.session_state.settings = saved.get("settings", st.session_state.settings)
-
-# --- Function to save data ---
-def save_data():
+# Save trades to JSON file
+def save_trades(df):
     with open(DATA_FILE, "w") as f:
-        json.dump({
-            "trades": st.session_state.trades,
-            "settings": st.session_state.settings
-        }, f, indent=2)
+        json.dump(df.to_dict(orient="records"), f, indent=4)
 
-# --- Sidebar Settings ---
-st.sidebar.subheader("Settings")
+# Initialize trades DataFrame
+trades = load_trades()
 
-settings = st.session_state.settings
+# ----------------------------
+# Sidebar Settings
+# ----------------------------
+st.sidebar.header("Settings")
+starting_capital = st.sidebar.number_input("Starting Capital ($)", value=10000, step=1000)
 
-settings['starting_capital'] = st.sidebar.number_input(
-    "Starting Capital ($)",
-    value=float(settings['starting_capital']),
-    step=100.00,
-    format="%.2f"
-)
+# ----------------------------
+# Trade Logging
+# ----------------------------
+st.header("📈 Swing Trading Dashboard")
 
-settings['default_commission'] = st.sidebar.number_input(
-    "Default Commission ($)",
-    value=float(settings['default_commission']),
-    step=0.10,
-    format="%.2f"
-)
+with st.expander("➕ Log New Trade", expanded=True):
+    col1, col2, col3 = st.columns(3)
+    symbol = col1.text_input("Symbol")
+    entry_date = col2.date_input("Entry Date", datetime.today())
+    exit_date = col3.date_input("Exit Date", datetime.today())
 
-settings['max_risk_pct'] = st.sidebar.number_input(
-    "Max Risk % per Trade",
-    value=float(settings['max_risk_pct']),
-    step=0.5,
-    format="%.2f"
-)
+    col4, col5, col6 = st.columns(3)
+    entry_price = col4.number_input("Entry Price", min_value=0.0, value=0.0, format="%.2f")
+    exit_price = col5.number_input("Exit Price", min_value=0.0, value=0.0, format="%.2f")
+    position = col6.selectbox("Position", ["Long", "Short"])
 
-# --- Main App ---
-st.title("Swing Trader Dashboard")
+    col7, col8 = st.columns(2)
+    quantity = col7.number_input("Quantity", min_value=1, value=1, step=1)
+    notes = col8.text_input("Notes (Optional)")
 
-# --- Add Trade ---
-st.subheader("Add Trade")
+    if st.button("Add Trade"):
+        if entry_price > 0 and exit_price > 0 and symbol:
+            pnl = (exit_price - entry_price) * quantity if position == "Long" else (entry_price - exit_price) * quantity
+            ret_pct = (pnl / (entry_price * quantity)) * 100
 
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    symbol = st.text_input("Symbol")
-with col2:
-    entry = st.number_input("Entry Price", format="%.2f")
-with col3:
-    exit_price = st.number_input("Exit Price", format="%.2f")
-with col4:
-    commission = st.number_input("Commission ($)", value=float(settings['default_commission']), step=0.10, format="%.2f")
+            new_trade = pd.DataFrame([{
+                "Symbol": symbol,
+                "Entry Date": str(entry_date),
+                "Exit Date": str(exit_date),
+                "Entry Price": entry_price,
+                "Exit Price": exit_price,
+                "Position": position,
+                "Quantity": quantity,
+                "P&L": pnl,
+                "Return %": ret_pct,
+                "Notes": notes
+            }])
 
-if st.button("Add Trade"):
-    if symbol and entry and exit_price is not None:
-        trade = {
-            "symbol": symbol,
-            "entry": entry,
-            "exit": exit_price,
-            "commission": commission
-        }
-        st.session_state.trades.append(trade)
-        save_data()
-        st.success(f"Trade for {symbol} added!")
+            trades = pd.concat([trades, new_trade], ignore_index=True)
+            save_trades(trades)
+            st.success("✅ Trade added!")
 
-# --- Trades Table ---
-if st.session_state.trades:
-    df = pd.DataFrame(st.session_state.trades)
-    df["Profit"] = df["exit"] - df["entry"] - df["commission"]
-    st.subheader("Trades")
-    st.dataframe(df)
+# ----------------------------
+# Statistics Dashboard
+# ----------------------------
+st.subheader("📊 Statistics")
 
-    # --- Stats ---
-    total_trades = len(df)
-    winning_trades = len(df[df["Profit"] > 0])
-    win_rate = round((winning_trades / total_trades) * 100, 2) if total_trades else 0
-    avg_win = round(df[df["Profit"] > 0]["Profit"].mean(), 2) if winning_trades else 0
-    avg_loss = round(df[df["Profit"] <= 0]["Profit"].mean(), 2) if total_trades - winning_trades else 0
+if not trades.empty:
+    total_trades = len(trades)
+    total_pnl = trades["P&L"].sum()
+    win_rate = (trades["P&L"] > 0).mean() * 100
+    avg_win = trades.loc[trades["P&L"] > 0, "P&L"].mean() if not trades.loc[trades["P&L"] > 0].empty else 0
+    avg_loss = trades.loc[trades["P&L"] < 0, "P&L"].mean() if not trades.loc[trades["P&L"] < 0].empty else 0
 
-    st.subheader("Stats")
-    st.write(f"Total Trades: {total_trades}")
-    st.write(f"Win Rate: {win_rate}%")
-    st.write(f"Avg Win: ${avg_win} • Avg Loss: ${avg_loss}")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Trades", total_trades)
+    col2.metric("Total P&L", f"${total_pnl:,.2f}")
+    col3.metric("Win Rate", f"{win_rate:.2f}%")
 
-    # --- Equity Curve ---
-    df["Equity"] = settings['starting_capital'] + df["Profit"].cumsum()
-    st.subheader("Equity Curve")
+    col4, col5 = st.columns(2)
+    col4.metric("Avg Win", f"${avg_win:,.2f}")
+    col5.metric("Avg Loss", f"${avg_loss:,.2f}")
+
+    # ----------------------------
+    # Equity Curve
+    # ----------------------------
+    st.subheader("📈 Equity Curve")
+
+    trades_sorted = trades.sort_values("Exit Date")
+    equity = [starting_capital]
+    for pnl in trades_sorted["P&L"]:
+        equity.append(equity[-1] + pnl)
+
     fig, ax = plt.subplots()
-    ax.plot(df["Equity"], marker='o')
-    ax.set_xlabel("Trade #")
+    ax.plot(trades_sorted["Exit Date"], equity[1:], marker="o")
+    ax.set_xlabel("Date")
     ax.set_ylabel("Equity ($)")
-    ax.grid(True)
+    ax.set_title("Equity Curve")
     st.pyplot(fig)
+
+    # ----------------------------
+    # Trade History Table
+    # ----------------------------
+    st.subheader("📜 Trade History")
+    st.dataframe(trades)
+
+    if st.button("Delete All Trades"):
+        trades = trades.iloc[0:0]
+        save_trades(trades)
+        st.warning("All trades deleted.")
+
 else:
-    st.info("No trades added yet.")
+    st.info("No trades logged yet.")
