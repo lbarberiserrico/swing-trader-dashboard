@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import plotly.graph_objects as go
 import json
 import os
 from datetime import datetime
@@ -58,11 +57,11 @@ if uploaded_file is not None:
         # Standardize column names
         imported_df.columns = imported_df.columns.str.strip().str.title()
 
-        # Expected minimum columns: Symbol, Entry Date, Exit Date, Entry Price, Exit Price, Quantity, Position
+        # Expected minimum columns
         required_cols = ["Symbol", "Entry Date", "Exit Date", "Entry Price", "Exit Price", "Quantity", "Position"]
         if all(col in imported_df.columns for col in required_cols):
 
-            # Convert dates to datetime.date
+            # Convert dates
             imported_df["Entry Date"] = pd.to_datetime(imported_df["Entry Date"]).dt.date
             imported_df["Exit Date"] = pd.to_datetime(imported_df["Exit Date"]).dt.date
 
@@ -94,7 +93,6 @@ if uploaded_file is not None:
 
     except Exception as e:
         st.sidebar.error(f"⚠️ Error importing file: {e}")
-
 
 # ----------------------------
 # Trade Logging
@@ -146,46 +144,4 @@ st.subheader("📊 Statistics")
 if not trades.empty:
     total_trades = len(trades)
     total_pnl = trades["P&L"].sum()
-    win_rate = (trades["P&L"] > 0).mean() * 100
-    avg_win = trades.loc[trades["P&L"] > 0, "P&L"].mean() if not trades.loc[trades["P&L"] > 0].empty else 0
-    avg_loss = trades.loc[trades["P&L"] < 0, "P&L"].mean() if not trades.loc[trades["P&L"] < 0].empty else 0
-
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total Trades", total_trades)
-    col2.metric("Total P&L", f"${total_pnl:,.2f}")
-    col3.metric("Win Rate", f"{win_rate:.2f}%")
-
-    col4, col5 = st.columns(2)
-    col4.metric("Avg Win", f"${avg_win:,.2f}")
-    col5.metric("Avg Loss", f"${avg_loss:,.2f}")
-
-    # ----------------------------
-    # Equity Curve
-    # ----------------------------
-    st.subheader("📈 Equity Curve")
-
-    trades_sorted = trades.sort_values("Exit Date")
-    equity = [starting_capital]
-    for pnl in trades_sorted["P&L"]:
-        equity.append(equity[-1] + pnl)
-
-    fig, ax = plt.subplots()
-    ax.plot(trades_sorted["Exit Date"], equity[1:], marker="o")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Equity ($)")
-    ax.set_title("Equity Curve")
-    st.pyplot(fig)
-
-    # ----------------------------
-    # Trade History Table
-    # ----------------------------
-    st.subheader("📜 Trade History")
-    st.dataframe(trades)
-
-    if st.button("Delete All Trades"):
-        trades = trades.iloc[0:0]
-        save_trades(trades)
-        st.warning("All trades deleted.")
-
-else:
-    st.info("No trades logged yet.")
+    win_rate = (trades["P&L"] > 0).mean()_
